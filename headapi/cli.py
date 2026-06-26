@@ -113,7 +113,9 @@ def main(
         return
 
     if not word:
-        raise click.UsageError("Fournis un mot à épeler, ou utilise --install / --list-styles / --clear-cache.")
+        from .tui import HeadAPIApp
+        HeadAPIApp(api_key=api_key).run()
+        return
 
     try:
         letters = _resolve(word, style, api_key, no_cache, fallback, verbose)
