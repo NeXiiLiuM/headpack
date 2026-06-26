@@ -68,7 +68,7 @@ def get_face_image(head: Head) -> Image.Image:
     return face.convert("RGB")
 
 
-def get_iso_image(head: Head, rotation: int = 0, n: int = 16) -> Image.Image:
+def get_iso_image(head: Head, rotation: int = 0, n: int = 32) -> Image.Image:
     skin = _download_skin(extract_texture_url(head.value))
     fl_key, fr_key, top_rot = _ISO_VIEWS[rotation % 4]
 

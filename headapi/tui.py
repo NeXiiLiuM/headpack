@@ -66,7 +66,7 @@ class HeadAPIApp(App):
     }
 
     #head_preview_panel {
-        width: 36;
+        width: 70;
         border-left: solid $primary;
         padding: 0 1;
         align: center top;
@@ -79,6 +79,12 @@ class HeadAPIApp(App):
         margin-bottom: 1;
     }
 
+    #face_separator {
+        color: $text-muted;
+        text-align: center;
+        margin-top: 1;
+    }
+
     #deploy_btn {
         margin-top: 2;
         width: 100%;
@@ -86,13 +92,14 @@ class HeadAPIApp(App):
     """
 
     BINDINGS = [
-        Binding("ctrl+d", "deploy",       "Déployer",   priority=True),
-        Binding("ctrl+q", "quit",          "Quitter",    priority=True),
-        Binding("escape", "quit",          "Quitter",    show=False, priority=True),
-        Binding("up",     "preview_up",   "↑ Lettre",   priority=True, show=False),
-        Binding("down",   "preview_down", "↓ Lettre",   priority=True, show=False),
-        Binding("left",   "rotate_left",  "← Vue",      priority=True, show=False),
-        Binding("right",  "rotate_right", "→ Vue",      priority=True, show=False),
+        Binding("ctrl+d", "deploy",       "Déployer",  priority=True),
+        Binding("ctrl+q", "quit",          "Quitter",   priority=True),
+        Binding("escape", "quit",          "Quitter",   show=False, priority=True),
+        Binding("up",     "preview_up",   "↑ Lettre",  priority=True, show=False),
+        Binding("down",   "preview_down", "↓ Lettre",  priority=True, show=False),
+        Binding("left",   "rotate_left",  "← Vue",     priority=True, show=False),
+        Binding("right",  "rotate_right", "→ Vue",     priority=True, show=False),
+        Binding("ctrl+f", "toggle_face",  "^f Face",   priority=True, show=False),
     ]
 
     _VIEW_LABELS = [
@@ -109,6 +116,7 @@ class HeadAPIApp(App):
         self._current_letters: list[ResolvedLetter] = []
         self._loaded = False
         self._iso_rotation: int = 0
+        self._show_face: bool = False
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -132,6 +140,8 @@ class HeadAPIApp(App):
                     with Vertical(id="head_preview_panel"):
                         yield Label("", id="selected_head_label")
                         yield Static("", id="head_image")
+                        yield Label("", id="face_separator")
+                        yield Static("", id="face_image")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -209,6 +219,16 @@ class HeadAPIApp(App):
         if row < len(self._current_letters):
             self._fetch_and_show_texture(self._current_letters[row].head)
 
+    def action_toggle_face(self) -> None:
+        self._show_face = not self._show_face
+        if not self._show_face:
+            self.query_one("#face_separator", Label).update("")
+            self.query_one("#face_image", Static).update("")
+        table = self.query_one("#preview_table", DataTable)
+        row = table.cursor_row
+        if self._current_letters and row < len(self._current_letters):
+            self._fetch_and_show_texture(self._current_letters[row].head)
+
     def _refresh_preview(self) -> None:
         if not self._loaded:
             return
@@ -235,6 +255,8 @@ class HeadAPIApp(App):
         self.query_one("#warning_label", Label).update("")
         self.query_one("#selected_head_label", Label).update("")
         self.query_one("#head_image", Static).update("")
+        self.query_one("#face_separator", Label).update("")
+        self.query_one("#face_image", Static).update("")
         self._current_letters = []
 
     def _draw_preview(
@@ -259,22 +281,32 @@ class HeadAPIApp(App):
 
     @work(thread=True)
     def _fetch_and_show_texture(self, head: Head) -> None:
-        from .textures import get_iso_image
+        from .textures import get_iso_image, get_face_image
         from rich_pixels import Pixels
+        from PIL import Image as PILImage
 
         try:
-            img = get_iso_image(head, rotation=self._iso_rotation)
-            pixels = Pixels.from_image(img)
-            self.call_from_thread(self._update_head_image, head.name, pixels)
+            iso = get_iso_image(head, rotation=self._iso_rotation)
+            iso_pixels = Pixels.from_image(iso)
+
+            face_pixels = None
+            if self._show_face:
+                face = get_face_image(head).resize((32, 32), PILImage.NEAREST)
+                face_pixels = Pixels.from_image(face)
+
+            self.call_from_thread(self._update_head_image, head.name, iso_pixels, face_pixels)
         except Exception:
             self.call_from_thread(
-                self._update_head_image, head.name, "⚠ Aperçu indisponible"
+                self._update_head_image, head.name, "⚠ Aperçu indisponible", None
             )
 
-    def _update_head_image(self, name: str, content: object) -> None:
+    def _update_head_image(self, name: str, iso_content: object, face_content: object | None) -> None:
         label = f"{name}  {self._VIEW_LABELS[self._iso_rotation]}"
         self.query_one("#selected_head_label", Label).update(label)
-        self.query_one("#head_image", Static).update(content)
+        self.query_one("#head_image", Static).update(iso_content)
+        if face_content is not None:
+            self.query_one("#face_separator", Label).update("─── face ───")
+            self.query_one("#face_image", Static).update(face_content)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "deploy_btn":
