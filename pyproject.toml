@@ -12,6 +12,8 @@ dependencies = [
     "python-dotenv>=1.0",
     "rich>=13.0",
     "textual>=0.70",
+    "Pillow>=10.0",
+    "rich-pixels",
 ]
 
 [project.scripts]

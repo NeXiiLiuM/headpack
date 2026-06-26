@@ -5,7 +5,7 @@ from pathlib import Path
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Select
+from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Select, Static
 from textual import work
 
 from . import resolver, world as world_module
@@ -44,6 +44,14 @@ class HeadAPIApp(App):
         margin-bottom: 1;
     }
 
+    #preview_area {
+        height: 1fr;
+    }
+
+    #letter_list {
+        width: 1fr;
+    }
+
     #preview_table {
         height: 1fr;
     }
@@ -57,6 +65,20 @@ class HeadAPIApp(App):
         color: $warning;
     }
 
+    #head_preview_panel {
+        width: 36;
+        border-left: solid $primary;
+        padding: 0 1;
+        align: center top;
+    }
+
+    #selected_head_label {
+        color: $text-muted;
+        text-align: center;
+        text-style: italic;
+        margin-bottom: 1;
+    }
+
     #deploy_btn {
         margin-top: 2;
         width: 100%;
@@ -67,6 +89,8 @@ class HeadAPIApp(App):
         Binding("ctrl+d", "deploy", "Déployer", priority=True),
         Binding("ctrl+q", "quit", "Quitter", priority=True),
         Binding("escape", "quit", "Quitter", show=False, priority=True),
+        Binding("up", "preview_up", "↑ Lettre", priority=True, show=False),
+        Binding("down", "preview_down", "↓ Lettre", priority=True, show=False),
     ]
 
     def __init__(self, api_key: str | None = None) -> None:
@@ -90,9 +114,14 @@ class HeadAPIApp(App):
                 yield Button("Déployer", id="deploy_btn", variant="primary")
             with Vertical(id="right_panel"):
                 yield Label("Aperçu", classes="panel-title")
-                yield DataTable(id="preview_table", show_header=False, zebra_stripes=True)
-                yield Label("", id="status_label")
-                yield Label("", id="warning_label")
+                with Horizontal(id="preview_area"):
+                    with Vertical(id="letter_list"):
+                        yield DataTable(id="preview_table", show_header=False, zebra_stripes=True)
+                        yield Label("", id="status_label")
+                        yield Label("", id="warning_label")
+                    with Vertical(id="head_preview_panel"):
+                        yield Label("", id="selected_head_label")
+                        yield Static("", id="head_image")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -136,6 +165,25 @@ class HeadAPIApp(App):
         if event.select.id == "style_select":
             self._refresh_preview()
 
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        row_idx = event.cursor_row
+        if row_idx < len(self._current_letters):
+            self._fetch_and_show_texture(self._current_letters[row_idx].head)
+
+    def action_preview_up(self) -> None:
+        self._move_preview_cursor(-1)
+
+    def action_preview_down(self) -> None:
+        self._move_preview_cursor(1)
+
+    def _move_preview_cursor(self, delta: int) -> None:
+        if not self._current_letters:
+            return
+        table = self.query_one("#preview_table", DataTable)
+        new_row = max(0, min(len(self._current_letters) - 1, table.cursor_row + delta))
+        table.move_cursor(row=new_row)
+        self._fetch_and_show_texture(self._current_letters[new_row].head)
+
     def _refresh_preview(self) -> None:
         if not self._loaded:
             return
@@ -153,10 +201,15 @@ class HeadAPIApp(App):
         self._current_letters = letters
         self._draw_preview(letters, warnings, word)
 
+        if letters:
+            self._fetch_and_show_texture(letters[0].head)
+
     def _clear_preview(self) -> None:
         self.query_one("#preview_table", DataTable).clear()
         self.query_one("#status_label", Label).update("")
         self.query_one("#warning_label", Label).update("")
+        self.query_one("#selected_head_label", Label).update("")
+        self.query_one("#head_image", Static).update("")
         self._current_letters = []
 
     def _draw_preview(
@@ -174,13 +227,30 @@ class HeadAPIApp(App):
             table.add_row(r.char, "→", r.head.name + style_note, marker)
 
         status = self.query_one("#status_label", Label)
-        if letters:
-            status.update(f"✓  {len(letters)} tête(s) pour « {word.upper()} »")
-        else:
-            status.update("")
+        status.update(f"✓  {len(letters)} tête(s) pour « {word.upper()} »" if letters else "")
 
         warn_label = self.query_one("#warning_label", Label)
         warn_label.update("\n".join(f"⚠ {w}" for w in warnings) if warnings else "")
+
+    @work(thread=True)
+    def _fetch_and_show_texture(self, head: Head) -> None:
+        from .textures import get_face_image
+        from rich_pixels import Pixels
+        from PIL import Image as PILImage
+
+        try:
+            img = get_face_image(head)
+            img = img.resize((32, 32), PILImage.NEAREST)
+            pixels = Pixels.from_image(img)
+            self.call_from_thread(self._update_head_image, head.name, pixels)
+        except Exception:
+            self.call_from_thread(
+                self._update_head_image, head.name, "⚠ Aperçu indisponible"
+            )
+
+    def _update_head_image(self, name: str, content: object) -> None:
+        self.query_one("#selected_head_label", Label).update(name)
+        self.query_one("#head_image", Static).update(content)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "deploy_btn":
