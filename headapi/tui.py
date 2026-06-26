@@ -85,6 +85,18 @@ class HeadAPIApp(App):
         margin-top: 1;
     }
 
+    #face_detail_area {
+        height: auto;
+    }
+
+    #face_lateral_col {
+        width: 33;
+    }
+
+    #face_topbot_col {
+        width: 33;
+    }
+
     #deploy_btn {
         margin-top: 2;
         width: 100%;
@@ -109,6 +121,9 @@ class HeadAPIApp(App):
         "↖ gauche-avant",
     ]
 
+    _FLAT_FACE_KEYS   = ["front", "left", "back", "right"]
+    _FLAT_FACE_LABELS = ["avant", "gauche", "arrière", "droite"]
+
     def __init__(self, api_key: str | None = None) -> None:
         super().__init__()
         self._api_key = api_key or os.environ.get("MINECRAFT_HEADS_API_KEY")
@@ -116,7 +131,9 @@ class HeadAPIApp(App):
         self._current_letters: list[ResolvedLetter] = []
         self._loaded = False
         self._iso_rotation: int = 0
+        self._topbot_idx: int = 0
         self._show_face: bool = False
+        self._bg_rgb: tuple[int, int, int] = (18, 18, 18)
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -141,7 +158,11 @@ class HeadAPIApp(App):
                         yield Label("", id="selected_head_label")
                         yield Static("", id="head_image")
                         yield Label("", id="face_separator")
-                        yield Static("", id="face_image")
+                        with Horizontal(id="face_detail_area"):
+                            with Vertical(id="face_lateral_col"):
+                                yield Static("", id="face_lateral_image")
+                            with Vertical(id="face_topbot_col"):
+                                yield Static("", id="face_topbot_image")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -150,6 +171,18 @@ class HeadAPIApp(App):
 
         self._populate_worlds()
         self._load_heads()
+        self.call_after_refresh(self._update_bg_color)
+
+    def _update_bg_color(self) -> None:
+        try:
+            c = self.screen.styles.background
+            if c.a > 0:
+                self._bg_rgb = (c.r, c.g, c.b)
+        except Exception:
+            pass
+
+    def watch_dark(self, dark: bool) -> None:
+        self.call_after_refresh(self._update_bg_color)
 
     def _populate_worlds(self) -> None:
         worlds = world_module.list_worlds()
@@ -214,6 +247,7 @@ class HeadAPIApp(App):
         if not self._current_letters:
             return
         self._iso_rotation = (self._iso_rotation + delta) % 4
+        self._topbot_idx = (self._topbot_idx + delta) % 2
         table = self.query_one("#preview_table", DataTable)
         row = table.cursor_row
         if row < len(self._current_letters):
@@ -222,12 +256,16 @@ class HeadAPIApp(App):
     def action_toggle_face(self) -> None:
         self._show_face = not self._show_face
         if not self._show_face:
-            self.query_one("#face_separator", Label).update("")
-            self.query_one("#face_image", Static).update("")
+            self._clear_face_detail()
         table = self.query_one("#preview_table", DataTable)
         row = table.cursor_row
         if self._current_letters and row < len(self._current_letters):
             self._fetch_and_show_texture(self._current_letters[row].head)
+
+    def _clear_face_detail(self) -> None:
+        self.query_one("#face_separator",    Label).update("")
+        self.query_one("#face_lateral_image", Static).update("")
+        self.query_one("#face_topbot_image", Static).update("")
 
     def _refresh_preview(self) -> None:
         if not self._loaded:
@@ -255,8 +293,7 @@ class HeadAPIApp(App):
         self.query_one("#warning_label", Label).update("")
         self.query_one("#selected_head_label", Label).update("")
         self.query_one("#head_image", Static).update("")
-        self.query_one("#face_separator", Label).update("")
-        self.query_one("#face_image", Static).update("")
+        self._clear_face_detail()
         self._current_letters = []
 
     def _draw_preview(
@@ -281,32 +318,47 @@ class HeadAPIApp(App):
 
     @work(thread=True)
     def _fetch_and_show_texture(self, head: Head) -> None:
-        from .textures import get_iso_image, get_face_image
+        from .textures import get_iso_image, get_face_by_name
         from rich_pixels import Pixels
-        from PIL import Image as PILImage
 
         try:
-            iso = get_iso_image(head, rotation=self._iso_rotation)
-            iso_pixels = Pixels.from_image(iso)
+            iso_pixels = Pixels.from_image(get_iso_image(head, rotation=self._iso_rotation, bg_color=self._bg_rgb))
 
-            face_pixels = None
+            lat_px = topbot_px = None
             if self._show_face:
-                face = get_face_image(head).resize((32, 32), PILImage.NEAREST)
-                face_pixels = Pixels.from_image(face)
+                key = self._FLAT_FACE_KEYS[self._iso_rotation]
+                topbot_key = ("top", "bottom")[self._topbot_idx]
+                lat_px    = Pixels.from_image(get_face_by_name(head, key,        size=32))
+                topbot_px = Pixels.from_image(get_face_by_name(head, topbot_key, size=32))
 
-            self.call_from_thread(self._update_head_image, head.name, iso_pixels, face_pixels)
+            self.call_from_thread(
+                self._update_head_image, head.name, iso_pixels, lat_px, topbot_px
+            )
         except Exception:
             self.call_from_thread(
-                self._update_head_image, head.name, "⚠ Aperçu indisponible", None
+                self._update_head_image, head.name, "⚠ Aperçu indisponible", None, None
             )
 
-    def _update_head_image(self, name: str, iso_content: object, face_content: object | None) -> None:
-        label = f"{name}  {self._VIEW_LABELS[self._iso_rotation]}"
-        self.query_one("#selected_head_label", Label).update(label)
+    def _update_head_image(
+        self,
+        name: str,
+        iso_content: object,
+        lat_content: object | None,
+        topbot_content: object | None,
+    ) -> None:
+        self.query_one("#selected_head_label", Label).update(
+            f"{name}  {self._VIEW_LABELS[self._iso_rotation]}"
+        )
         self.query_one("#head_image", Static).update(iso_content)
-        if face_content is not None:
-            self.query_one("#face_separator", Label).update("─── face ───")
-            self.query_one("#face_image", Static).update(face_content)
+
+        if lat_content is not None:
+            face_label  = self._FLAT_FACE_LABELS[self._iso_rotation]
+            topbot_label = ("dessus", "dessous")[self._topbot_idx]
+            self.query_one("#face_separator", Label).update(
+                f"─── {face_label} • {topbot_label} ───"
+            )
+            self.query_one("#face_lateral_image", Static).update(lat_content)
+            self.query_one("#face_topbot_image",  Static).update(topbot_content)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "deploy_btn":

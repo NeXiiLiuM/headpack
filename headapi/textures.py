@@ -16,7 +16,8 @@ _FACE_UV = {
     "left":  ((16, 8, 24, 16), (48,  8, 56, 16)),
     "right": ((0,  8,  8, 16), (32,  8, 40, 16)),
     "back":  ((24, 8, 32, 16), (56,  8, 64, 16)),
-    "top":   ((8,  0, 16,  8), (40,  0, 48,  8)),
+    "top":    ((8,  0, 16,  8), (40,  0, 48,  8)),
+    "bottom": ((16, 0, 24,  8), (48,  0, 56,  8)),
 }
 
 # (face_gauche_cube, face_droite_cube, rotation_top_degrees)
@@ -68,7 +69,13 @@ def get_face_image(head: Head) -> Image.Image:
     return face.convert("RGB")
 
 
-def get_iso_image(head: Head, rotation: int = 0, n: int = 32) -> Image.Image:
+def get_face_by_name(head: Head, face_name: str, size: int = 16) -> Image.Image:
+    skin = _download_skin(extract_texture_url(head.value))
+    img = _composite_face(skin, *_FACE_UV[face_name]).convert("RGB")
+    return img.resize((size, size), Image.NEAREST)
+
+
+def get_iso_image(head: Head, rotation: int = 0, n: int = 32, bg_color: tuple[int, int, int] = (0, 0, 0)) -> Image.Image:
     skin = _download_skin(extract_texture_url(head.value))
     fl_key, fr_key, top_rot = _ISO_VIEWS[rotation % 4]
 
@@ -83,7 +90,7 @@ def get_iso_image(head: Head, rotation: int = 0, n: int = 32) -> Image.Image:
     face_r = ImageEnhance.Brightness(face_r.convert("RGBA")).enhance(0.60)
     top = top.convert("RGBA")
 
-    canvas = Image.new("RGBA", (2 * n, 2 * n), (0, 0, 0, 0))
+    canvas = Image.new("RGBA", (2 * n, 2 * n), (*bg_color, 255))
 
     def _paste(img: Image.Image, data: tuple) -> None:
         t = img.transform((2 * n, 2 * n), Image.Transform.AFFINE, data, Image.NEAREST)
