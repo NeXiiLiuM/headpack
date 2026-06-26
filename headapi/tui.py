@@ -86,11 +86,20 @@ class HeadAPIApp(App):
     """
 
     BINDINGS = [
-        Binding("ctrl+d", "deploy", "Déployer", priority=True),
-        Binding("ctrl+q", "quit", "Quitter", priority=True),
-        Binding("escape", "quit", "Quitter", show=False, priority=True),
-        Binding("up", "preview_up", "↑ Lettre", priority=True, show=False),
-        Binding("down", "preview_down", "↓ Lettre", priority=True, show=False),
+        Binding("ctrl+d", "deploy",       "Déployer",   priority=True),
+        Binding("ctrl+q", "quit",          "Quitter",    priority=True),
+        Binding("escape", "quit",          "Quitter",    show=False, priority=True),
+        Binding("up",     "preview_up",   "↑ Lettre",   priority=True, show=False),
+        Binding("down",   "preview_down", "↓ Lettre",   priority=True, show=False),
+        Binding("left",   "rotate_left",  "← Vue",      priority=True, show=False),
+        Binding("right",  "rotate_right", "→ Vue",      priority=True, show=False),
+    ]
+
+    _VIEW_LABELS = [
+        "↗ avant-droite",
+        "↘ droite-arrière",
+        "↙ arrière-gauche",
+        "↖ gauche-avant",
     ]
 
     def __init__(self, api_key: str | None = None) -> None:
@@ -99,6 +108,7 @@ class HeadAPIApp(App):
         self._heads: list[Head] = []
         self._current_letters: list[ResolvedLetter] = []
         self._loaded = False
+        self._iso_rotation: int = 0
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -184,6 +194,21 @@ class HeadAPIApp(App):
         table.move_cursor(row=new_row)
         self._fetch_and_show_texture(self._current_letters[new_row].head)
 
+    def action_rotate_left(self) -> None:
+        self._rotate_iso(-1)
+
+    def action_rotate_right(self) -> None:
+        self._rotate_iso(1)
+
+    def _rotate_iso(self, delta: int) -> None:
+        if not self._current_letters:
+            return
+        self._iso_rotation = (self._iso_rotation + delta) % 4
+        table = self.query_one("#preview_table", DataTable)
+        row = table.cursor_row
+        if row < len(self._current_letters):
+            self._fetch_and_show_texture(self._current_letters[row].head)
+
     def _refresh_preview(self) -> None:
         if not self._loaded:
             return
@@ -234,13 +259,11 @@ class HeadAPIApp(App):
 
     @work(thread=True)
     def _fetch_and_show_texture(self, head: Head) -> None:
-        from .textures import get_face_image
+        from .textures import get_iso_image
         from rich_pixels import Pixels
-        from PIL import Image as PILImage
 
         try:
-            img = get_face_image(head)
-            img = img.resize((32, 32), PILImage.NEAREST)
+            img = get_iso_image(head, rotation=self._iso_rotation)
             pixels = Pixels.from_image(img)
             self.call_from_thread(self._update_head_image, head.name, pixels)
         except Exception:
@@ -249,7 +272,8 @@ class HeadAPIApp(App):
             )
 
     def _update_head_image(self, name: str, content: object) -> None:
-        self.query_one("#selected_head_label", Label).update(name)
+        label = f"{name}  {self._VIEW_LABELS[self._iso_rotation]}"
+        self.query_one("#selected_head_label", Label).update(label)
         self.query_one("#head_image", Static).update(content)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
