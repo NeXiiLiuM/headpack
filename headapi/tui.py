@@ -26,6 +26,7 @@ class HeadAPIApp(App):
         width: 34;
         border: solid $primary;
         padding: 1 2;
+        overflow-y: auto;
     }
 
     #left_panel .section-label {
@@ -130,6 +131,8 @@ class HeadAPIApp(App):
         self._heads: list[Head] = []
         self._current_letters: list[ResolvedLetter] = []
         self._loaded = False
+        self._fallback: str = "first"
+        self._selector: str = "@p"
         self._iso_rotation: int = 0
         self._topbot_idx: int = 0
         self._show_face: bool = False
@@ -146,6 +149,17 @@ class HeadAPIApp(App):
                 yield Select([], id="style_select", prompt="Chargement…")
                 yield Label("Monde", classes="section-label")
                 yield Select([], id="world_select", prompt="Aucun monde")
+                yield Label("Fallback", classes="section-label")
+                yield Select(
+                    [("Premier style dispo", "first"), ("Ignorer la lettre", "skip"), ("Erreur", "error")],
+                    id="fallback_select",
+                    value="first",
+                    allow_blank=False,
+                )
+                yield Label("Sélecteur cible", classes="section-label")
+                yield Input(placeholder="@p", value="@p", id="selector_input")
+                yield Label("Clé API", classes="section-label")
+                yield Input(placeholder="(optionnelle)", password=True, id="apikey_input")
                 yield Button("Déployer", id="deploy_btn", variant="primary")
             with Vertical(id="right_panel"):
                 yield Label("Aperçu", classes="panel-title")
@@ -213,9 +227,21 @@ class HeadAPIApp(App):
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "word_input":
             self._refresh_preview()
+        elif event.input.id == "selector_input":
+            self._selector = event.value or "@p"
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "apikey_input":
+            self._api_key = event.value.strip() or None
+            self._loaded = False
+            self.query_one("#status_label", Label).update("Chargement…")
+            self._load_heads()
 
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id == "style_select":
+            self._refresh_preview()
+        elif event.select.id == "fallback_select":
+            self._fallback = str(event.value)
             self._refresh_preview()
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
@@ -279,7 +305,7 @@ class HeadAPIApp(App):
             return
 
         letters, warnings = resolver.resolve_word(
-            word, str(style_val), self._heads, fallback="first"
+            word, str(style_val), self._heads, fallback=self._fallback
         )
         self._current_letters = letters
         self._draw_preview(letters, warnings, word)
@@ -378,7 +404,7 @@ class HeadAPIApp(App):
     def _deploy(self, wp: Path) -> None:
         if not world_module.is_installed(wp):
             world_module.install_skeleton(wp)
-        content = gen_mcfunction.generate(self._current_letters, "@p")
+        content = gen_mcfunction.generate(self._current_letters, self._selector)
         world_module.deploy_mcfunction(content, wp)
         self.call_from_thread(self._on_deploy_done)
 
