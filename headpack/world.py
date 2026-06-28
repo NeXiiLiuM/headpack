@@ -1,9 +1,17 @@
 from __future__ import annotations
 import json
 import os
+import sys
 from pathlib import Path
 
-SAVES_DIR = Path.home() / "Library" / "Application Support" / "minecraft" / "saves"
+def _default_saves_dir() -> Path:
+    if sys.platform == "win32":
+        return Path.home() / "AppData" / "Roaming" / ".minecraft" / "saves"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "minecraft" / "saves"
+    return Path.home() / ".minecraft" / "saves"
+
+SAVES_DIR = _default_saves_dir()
 DATAPACK_NAME = "headpack"
 FUNCTION_REL = Path("data") / "headpack" / "function" / "give.mcfunction"
 MCMETA_CONTENT = json.dumps(
