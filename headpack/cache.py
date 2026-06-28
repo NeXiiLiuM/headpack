@@ -11,7 +11,7 @@ TTL_SECONDS = 7 * 24 * 3600
 def _cache_dir() -> Path:
     xdg = os.environ.get("XDG_CACHE_HOME")
     base = Path(xdg) if xdg else Path.home() / ".cache"
-    d = base / "headapi"
+    d = base / "headpack"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

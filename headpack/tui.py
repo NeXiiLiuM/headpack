@@ -10,12 +10,12 @@ from textual import work
 
 from . import resolver, world as world_module
 from .generators import mcfunction as gen_mcfunction
+from .i18n import AVAILABLE_LANGS, current_lang, set_lang, t
 from .models import Head, ResolvedLetter
 
 
-class HeadAPIApp(App):
-    TITLE = "HeadAPI"
-    SUB_TITLE = "Générateur de têtes Minecraft alphabétiques"
+class HeadPackApp(App):
+    TITLE = "HeadPack"
 
     CSS = """
     #main {
@@ -105,25 +105,25 @@ class HeadAPIApp(App):
     """
 
     BINDINGS = [
-        Binding("ctrl+d", "deploy",       "Déployer",  priority=True),
-        Binding("ctrl+q", "quit",          "Quitter",   priority=True),
-        Binding("escape", "quit",          "Quitter",   show=False, priority=True),
-        Binding("up",     "preview_up",   "↑ Lettre",  priority=True, show=False),
-        Binding("down",   "preview_down", "↓ Lettre",  priority=True, show=False),
-        Binding("left",   "rotate_left",  "← Vue",     priority=True, show=False),
-        Binding("right",  "rotate_right", "→ Vue",     priority=True, show=False),
-        Binding("ctrl+f", "toggle_face",  "^f Face",   priority=True, show=False),
+        Binding("ctrl+d", "deploy",        "Deploy",   priority=True),
+        Binding("ctrl+q", "quit",           "Quit",     priority=True),
+        Binding("escape", "quit",           "Quit",     show=False, priority=True),
+        Binding("up",     "preview_up",    "↑",        priority=True, show=False),
+        Binding("down",   "preview_down",  "↓",        priority=True, show=False),
+        Binding("left",   "rotate_left",   "←",        priority=True, show=False),
+        Binding("right",  "rotate_right",  "→",        priority=True, show=False),
+        Binding("ctrl+f", "toggle_face",   "^f Face",  priority=True, show=False),
     ]
 
-    _VIEW_LABELS = [
-        "↗ avant-droite",
-        "↘ droite-arrière",
-        "↙ arrière-gauche",
-        "↖ gauche-avant",
-    ]
+    _FLAT_FACE_KEYS = ["front", "left", "back", "right"]
 
-    _FLAT_FACE_KEYS   = ["front", "left", "back", "right"]
-    _FLAT_FACE_LABELS = ["avant", "gauche", "arrière", "droite"]
+    @property
+    def _view_labels(self) -> list[str]:
+        return [t("view_0"), t("view_1"), t("view_2"), t("view_3")]
+
+    @property
+    def _flat_face_labels(self) -> list[str]:
+        return [t("face_front"), t("face_left"), t("face_back"), t("face_right")]
 
     def __init__(self, api_key: str | None = None) -> None:
         super().__init__()
@@ -137,32 +137,39 @@ class HeadAPIApp(App):
         self._topbot_idx: int = 0
         self._show_face: bool = False
         self._bg_rgb: tuple[int, int, int] = (18, 18, 18)
+        self._applying_lang: bool = False
+
+    @property
+    def SUB_TITLE(self) -> str:  # type: ignore[override]
+        return t("app_subtitle")
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal(id="main"):
             with Vertical(id="left_panel"):
-                yield Label("Configuration", classes="panel-title")
-                yield Label("Mot à épeler", classes="section-label")
-                yield Input(placeholder="ex: MINECRAFT", id="word_input")
-                yield Label("Style", classes="section-label")
-                yield Select([], id="style_select", prompt="Chargement…")
-                yield Label("Monde", classes="section-label")
-                yield Select([], id="world_select", prompt="Aucun monde")
-                yield Label("Fallback", classes="section-label")
+                yield Label(t("config_title"), classes="panel-title", id="label_config_title")
+                yield Label(t("label_word"), classes="section-label", id="label_word")
+                yield Input(placeholder=t("word_placeholder"), id="word_input")
+                yield Label(t("label_style"), classes="section-label", id="label_style")
+                yield Select([], id="style_select", prompt=t("style_loading"))
+                yield Label(t("label_world"), classes="section-label", id="label_world")
+                yield Select([], id="world_select", prompt=t("world_none"))
+                yield Label(t("label_fallback"), classes="section-label", id="label_fallback")
                 yield Select(
-                    [("Premier style dispo", "first"), ("Ignorer la lettre", "skip"), ("Erreur", "error")],
+                    [(t("fallback_first"), "first"), (t("fallback_skip"), "skip"), (t("fallback_error"), "error")],
                     id="fallback_select",
                     value="first",
                     allow_blank=False,
                 )
-                yield Label("Sélecteur cible", classes="section-label")
-                yield Input(placeholder="@p", value="@p", id="selector_input")
-                yield Label("Clé API", classes="section-label")
-                yield Input(placeholder="(optionnelle)", password=True, id="apikey_input")
-                yield Button("Déployer", id="deploy_btn", variant="primary")
+                yield Label(t("label_selector"), classes="section-label", id="label_selector")
+                yield Input(placeholder=t("selector_placeholder"), value="@p", id="selector_input")
+                yield Label(t("label_apikey"), classes="section-label", id="label_apikey")
+                yield Input(placeholder=t("apikey_placeholder"), password=True, id="apikey_input")
+                yield Label(t("label_lang"), classes="section-label", id="label_lang")
+                yield Select(AVAILABLE_LANGS, id="lang_select", value=current_lang(), allow_blank=False)
+                yield Button(t("btn_deploy"), id="deploy_btn", variant="primary")
             with Vertical(id="right_panel"):
-                yield Label("Aperçu", classes="panel-title")
+                yield Label(t("preview_title"), classes="panel-title", id="label_preview_title")
                 with Horizontal(id="preview_area"):
                     with Vertical(id="letter_list"):
                         yield DataTable(id="preview_table", show_header=False, zebra_stripes=True)
@@ -181,7 +188,7 @@ class HeadAPIApp(App):
 
     def on_mount(self) -> None:
         table = self.query_one("#preview_table", DataTable)
-        table.add_columns("Lettre", "", "Tête", "")
+        table.add_columns("", "", "", "")
 
         self._populate_worlds()
         self._load_heads()
@@ -197,6 +204,32 @@ class HeadAPIApp(App):
 
     def watch_dark(self, dark: bool) -> None:
         self.call_after_refresh(self._update_bg_color)
+
+    def _apply_lang(self) -> None:
+        self._applying_lang = True
+        try:
+            self.sub_title = t("app_subtitle")
+            self.query_one("#label_config_title",  Label).update(t("config_title"))
+            self.query_one("#label_preview_title", Label).update(t("preview_title"))
+            self.query_one("#label_word",          Label).update(t("label_word"))
+            self.query_one("#label_style",         Label).update(t("label_style"))
+            self.query_one("#label_world",         Label).update(t("label_world"))
+            self.query_one("#label_fallback",      Label).update(t("label_fallback"))
+            self.query_one("#label_selector",      Label).update(t("label_selector"))
+            self.query_one("#label_apikey",        Label).update(t("label_apikey"))
+            self.query_one("#label_lang",          Label).update(t("label_lang"))
+            self.query_one("#deploy_btn",          Button).label = t("btn_deploy")
+            self.query_one("#fallback_select", Select).set_options([
+                (t("fallback_first"), "first"),
+                (t("fallback_skip"),  "skip"),
+                (t("fallback_error"), "error"),
+            ])
+            self.query_one("#word_input",      Input).placeholder = t("word_placeholder")
+            self.query_one("#selector_input",  Input).placeholder = t("selector_placeholder")
+            self.query_one("#apikey_input",    Input).placeholder = t("apikey_placeholder")
+        finally:
+            self._applying_lang = False
+        self._refresh_preview()
 
     def _populate_worlds(self) -> None:
         worlds = world_module.list_worlds()
@@ -234,15 +267,20 @@ class HeadAPIApp(App):
         if event.input.id == "apikey_input":
             self._api_key = event.value.strip() or None
             self._loaded = False
-            self.query_one("#status_label", Label).update("Chargement…")
+            self.query_one("#status_label", Label).update(t("loading"))
             self._load_heads()
 
     def on_select_changed(self, event: Select.Changed) -> None:
+        if self._applying_lang:
+            return
         if event.select.id == "style_select":
             self._refresh_preview()
         elif event.select.id == "fallback_select":
             self._fallback = str(event.value)
             self._refresh_preview()
+        elif event.select.id == "lang_select":
+            set_lang(str(event.value))
+            self._apply_lang()
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         row_idx = event.cursor_row
@@ -289,9 +327,9 @@ class HeadAPIApp(App):
             self._fetch_and_show_texture(self._current_letters[row].head)
 
     def _clear_face_detail(self) -> None:
-        self.query_one("#face_separator",    Label).update("")
+        self.query_one("#face_separator",     Label).update("")
         self.query_one("#face_lateral_image", Static).update("")
-        self.query_one("#face_topbot_image", Static).update("")
+        self.query_one("#face_topbot_image",  Static).update("")
 
     def _refresh_preview(self) -> None:
         if not self._loaded:
@@ -304,9 +342,14 @@ class HeadAPIApp(App):
             self._clear_preview()
             return
 
-        letters, warnings = resolver.resolve_word(
-            word, str(style_val), self._heads, fallback=self._fallback
-        )
+        try:
+            letters, warnings = resolver.resolve_word(
+                word, str(style_val), self._heads, fallback=self._fallback
+            )
+        except ValueError as exc:
+            self.query_one("#warning_label", Label).update(f"⚠ {exc}")
+            return
+
         self._current_letters = letters
         self._draw_preview(letters, warnings, word)
 
@@ -336,11 +379,12 @@ class HeadAPIApp(App):
             style_note = f"  (↳ {r.head.style()})" if r.fallback_used else ""
             table.add_row(r.char, "→", r.head.name + style_note, marker)
 
-        status = self.query_one("#status_label", Label)
-        status.update(f"✓  {len(letters)} tête(s) pour « {word.upper()} »" if letters else "")
-
-        warn_label = self.query_one("#warning_label", Label)
-        warn_label.update("\n".join(f"⚠ {w}" for w in warnings) if warnings else "")
+        self.query_one("#status_label", Label).update(
+            t("status_heads", n=len(letters), word=word.upper()) if letters else ""
+        )
+        self.query_one("#warning_label", Label).update(
+            "\n".join(f"⚠ {w}" for w in warnings) if warnings else ""
+        )
 
     @work(thread=True)
     def _fetch_and_show_texture(self, head: Head) -> None:
@@ -348,8 +392,9 @@ class HeadAPIApp(App):
         from rich_pixels import Pixels
 
         try:
-            iso_pixels = Pixels.from_image(get_iso_image(head, rotation=self._iso_rotation, bg_color=self._bg_rgb))
-
+            iso_pixels = Pixels.from_image(
+                get_iso_image(head, rotation=self._iso_rotation, bg_color=self._bg_rgb)
+            )
             lat_px = topbot_px = None
             if self._show_face:
                 key = self._FLAT_FACE_KEYS[self._iso_rotation]
@@ -362,7 +407,7 @@ class HeadAPIApp(App):
             )
         except Exception:
             self.call_from_thread(
-                self._update_head_image, head.name, "⚠ Aperçu indisponible", None, None
+                self._update_head_image, head.name, "⚠ Preview unavailable", None, None
             )
 
     def _update_head_image(
@@ -373,13 +418,13 @@ class HeadAPIApp(App):
         topbot_content: object | None,
     ) -> None:
         self.query_one("#selected_head_label", Label).update(
-            f"{name}  {self._VIEW_LABELS[self._iso_rotation]}"
+            f"{name}  {self._view_labels[self._iso_rotation]}"
         )
         self.query_one("#head_image", Static).update(iso_content)
 
         if lat_content is not None:
-            face_label  = self._FLAT_FACE_LABELS[self._iso_rotation]
-            topbot_label = ("dessus", "dessous")[self._topbot_idx]
+            face_label   = self._flat_face_labels[self._iso_rotation]
+            topbot_label = (t("face_top"), t("face_bottom"))[self._topbot_idx]
             self.query_one("#face_separator", Label).update(
                 f"─── {face_label} • {topbot_label} ───"
             )
@@ -392,11 +437,11 @@ class HeadAPIApp(App):
 
     def action_deploy(self) -> None:
         if not self._current_letters:
-            self.query_one("#status_label", Label).update("⚠ Tape un mot d'abord.")
+            self.query_one("#status_label", Label).update(t("err_no_word"))
             return
         world_val = self.query_one("#world_select", Select).value
         if world_val is Select.BLANK:
-            self.query_one("#status_label", Label).update("⚠ Sélectionne un monde d'abord.")
+            self.query_one("#status_label", Label).update(t("err_no_world"))
             return
         self._deploy(Path(str(world_val)))
 
@@ -409,11 +454,7 @@ class HeadAPIApp(App):
         self.call_from_thread(self._on_deploy_done)
 
     def _on_deploy_done(self) -> None:
-        self.notify(
-            "En jeu : /reload  puis  /function headapi:give",
-            title="✓ Déployé avec succès !",
-            timeout=6,
-        )
+        self.notify(t("deploy_body"), title=t("deploy_title"), timeout=6)
         btn = self.query_one("#deploy_btn", Button)
         btn.variant = "success"
         self.set_timer(3.0, self._reset_deploy_btn)

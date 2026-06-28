@@ -32,7 +32,7 @@ _ISO_VIEWS = [
 def _texture_cache_dir() -> Path:
     xdg = os.environ.get("XDG_CACHE_HOME")
     base = Path(xdg) if xdg else Path.home() / ".cache"
-    d = base / "headapi" / "textures"
+    d = base / "headpack" / "textures"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

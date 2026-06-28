@@ -1,4 +1,4 @@
-from headapi.cli import main
+from headpack.cli import main
 
 if __name__ == "__main__":
     main()
