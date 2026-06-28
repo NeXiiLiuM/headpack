@@ -43,6 +43,29 @@ cd headpack
 pip install -e .
 ```
 
+## API Key 
+
+Get your API Key here : https://minecraft-heads.com/api
+
+Then create a .env file in the same directory as the script and add the following line:
+
+```bash
+MINECRAFT_HEADS_API_KEY=your_key
+```
+
+You can also add the path to your Minecraft world but it's not mandatory :
+
+```bash
+MINECRAFT_HEADS_API_KEY=your_key
+WORLD_PATH=path/to/your/.minecraft/saves/your_world
+```
+
+Language can also be chose through the .env file :
+
+```bash
+HEADPACK_LANG=en/fr
+```
+
 ---
 
 ## Usage
@@ -127,6 +150,14 @@ Head data is cached locally at `~/.cache/headpack/` with a 7-day TTL. Clear it w
 ```bash
 headpack --clear-cache
 ```
+
+---
+
+## Language 
+
+Currently two languages are available : English and French
+
+If you want to add a language, you can do it in the [`i18n.py`](./headpack/i18n.py) file. Just add a new dictionary with the language code and the strings to translate.
 
 ---
 
