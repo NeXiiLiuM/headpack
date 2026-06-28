@@ -53,17 +53,12 @@ Then create a .env file in the same directory as the script and add the followin
 MINECRAFT_HEADS_API_KEY=your_key
 ```
 
-You can also add the path to your Minecraft world but it's not mandatory :
+You can also add the path to your Minecraft world and set the default language in the same file:
 
 ```bash
 MINECRAFT_HEADS_API_KEY=your_key
-WORLD_PATH=path/to/your/.minecraft/saves/your_world
-```
-
-Language can also be chose through the .env file :
-
-```bash
-HEADPACK_LANG=en/fr
+HEADPACK_WORLD_PATH=path/to/your/.minecraft/saves/your_world
+HEADPACK_LANG=en
 ```
 
 ---
@@ -116,6 +111,7 @@ headpack "HELLO" --output mcfunction > give.mcfunction
 | `--list-styles` | — | List all available head styles |
 | `--list-worlds` | — | List detected Minecraft worlds |
 | `--no-cache` | — | Force a fresh fetch from the API |
+| `--lang` | env var | Language: `fr` or `en` (also: `HEADPACK_LANG`) |
 
 ---
 
@@ -138,6 +134,7 @@ The first time, run `headpack --install` (or use the deploy button in the TUI �
 |---|---|
 | `MINECRAFT_HEADS_API_KEY` | API key for minecraft-heads.com (optional, increases rate limits) |
 | `HEADPACK_WORLD_PATH` | Default world path (overrides auto-detection) |
+| `HEADPACK_LANG` | Default language: `fr` (default) or `en` |
 
 A `.env` file in the working directory is loaded automatically.
 
